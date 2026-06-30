@@ -6,6 +6,7 @@
     #map { height: 500px; width: 100%; }
     body { font-family: sans-serif; padding: 10px; }
     button { margin-left: 10px; }
+    #resultImage { margin-top: 20px; max-width: 100%; border: 1px solid #ccc; }
   </style>
 </head>
 <body>
@@ -13,11 +14,15 @@
   <input id="addressInput" type="text" placeholder="123 Main St, City, State" style="width: 300px;">
   <button onclick="geocodeAddress()">Go</button>
   <button onclick="clearPolygon()">Clear Shape</button>
-  <p>After locating your address, click points on the map to draw a shape. Click "Clear Shape" to start over.</p>
+  <p>After locating your address, click points on the map to draw a shape.</p>
   <div id="map"></div>
+  <br>
+  <button onclick="generateImage()">Generate Image</button>
+  <div id="imageContainer"></div>
 
   <script>
     let map, geocoder, currentPolygon, polygonPoints = [];
+    const API_KEY = "AIzaSyAcyAvzOdRiSogOehJRXOkYEyisWhHoaIQ";
 
     function initMap() {
       geocoder = new google.maps.Geocoder();
@@ -26,7 +31,6 @@
         zoom: 4,
       });
 
-      // Every click on the map adds a point to the current shape
       map.addListener("click", (event) => {
         polygonPoints.push(event.latLng);
         drawPolygon();
@@ -53,6 +57,7 @@
       }
       polygonPoints = [];
       currentPolygon = null;
+      document.getElementById("imageContainer").innerHTML = "";
     }
 
     function geocodeAddress() {
@@ -65,6 +70,26 @@
           alert("Address not found: " + status);
         }
       });
+    }
+
+    function generateImage() {
+      if (polygonPoints.length < 3) {
+        alert("Please draw a shape with at least 3 points first.");
+        return;
+      }
+
+      const center = map.getCenter();
+      const zoom = map.getZoom();
+
+      // Build the path parameter: color + points, separated by |
+      let pathStr = "color:0xff0000ff|fillcolor:0xff000066";
+      polygonPoints.forEach((point) => {
+        pathStr += `|${point.lat()},${point.lng()}`;
+      });
+
+      const url = `https://maps.googleapis.com/maps/api/staticmap?center=${center.lat()},${center.lng()}&zoom=${zoom}&size=640x400&maptype=roadmap&path=${encodeURIComponent(pathStr)}&key=${API_KEY}`;
+
+      document.getElementById("imageContainer").innerHTML = `<h3>Generated Image:</h3><img id="resultImage" src="${url}">`;
     }
   </script>
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAcyAvzOdRiSogOehJRXOkYEyisWhHoaIQ&callback=initMap" async></script>
