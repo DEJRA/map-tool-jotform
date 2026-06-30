@@ -87,10 +87,20 @@
 
   const url = `https://maps.googleapis.com/maps/api/staticmap?size=640x400&maptype=roadmap&path=${encodeURIComponent(pathStr)}&key=${API_KEY}`;
 
-  document.getElementById("imageContainer").innerHTML = `<h3>Generated Image:</h3><img id="resultImage" src="${url}">`;
+  document.getElementById("imageContainer").innerHTML = `
+    <h3>Generated Image:</h3>
+    <img id="resultImage" src="${url}"><br>
+    <p>Copy this link and paste it into the "Map Image Link" field on the form:</p>
+    <input id="urlBox" type="text" value="${url}" readonly style="width: 90%;">
+    <button onclick="copyUrl()">Copy Link</button>
+  `;
+}
 
-  // Send the image URL up to the parent page (JotForm)
-  window.parent.postMessage({ type: "mapImageGenerated", imageUrl: url }, "*");
+function copyUrl() {
+  const box = document.getElementById("urlBox");
+  box.select();
+  navigator.clipboard.writeText(box.value);
+  alert("Link copied! Now paste it into the Map Image Link field on the form.");
 }
   </script>
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAcyAvzOdRiSogOehJRXOkYEyisWhHoaIQ&callback=initMap" async></script>
