@@ -73,22 +73,25 @@
     }
 
     function generateImage() {
-      if (polygonPoints.length < 3) {
-        alert("Please draw a shape with at least 3 points first.");
-        return;
-      }
+  if (polygonPoints.length < 3) {
+    alert("Please draw a shape with at least 3 points first.");
+    return;
+  }
 
-      let pathStr = "color:0xff0000ff|fillcolor:0xff000066";
-      polygonPoints.forEach((point) => {
-        pathStr += `|${point.lat()},${point.lng()}`;
-      });
-      const first = polygonPoints[0];
-      pathStr += `|${first.lat()},${first.lng()}`;
+  let pathStr = "color:0xff0000ff|fillcolor:0xff000066";
+  polygonPoints.forEach((point) => {
+    pathStr += `|${point.lat()},${point.lng()}`;
+  });
+  const first = polygonPoints[0];
+  pathStr += `|${first.lat()},${first.lng()}`;
 
-      const url = `https://maps.googleapis.com/maps/api/staticmap?size=640x400&maptype=roadmap&path=${encodeURIComponent(pathStr)}&key=${API_KEY}`;
+  const url = `https://maps.googleapis.com/maps/api/staticmap?size=640x400&maptype=roadmap&path=${encodeURIComponent(pathStr)}&key=${API_KEY}`;
 
-      document.getElementById("imageContainer").innerHTML = `<h3>Generated Image:</h3><img id="resultImage" src="${url}">`;
-    }
+  document.getElementById("imageContainer").innerHTML = `<h3>Generated Image:</h3><img id="resultImage" src="${url}">`;
+
+  // Send the image URL up to the parent page (JotForm)
+  window.parent.postMessage({ type: "mapImageGenerated", imageUrl: url }, "*");
+}
   </script>
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAcyAvzOdRiSogOehJRXOkYEyisWhHoaIQ&callback=initMap" async></script>
 </body>
