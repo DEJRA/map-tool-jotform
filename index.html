@@ -14,13 +14,37 @@
   <div id="map"></div>
 
   <script>
-    let map, geocoder;
+    let map, geocoder, drawingManager, currentPolygon;
 
     function initMap() {
       geocoder = new google.maps.Geocoder();
       map = new google.maps.Map(document.getElementById("map"), {
-        center: { lat: 39.8283, lng: -98.5795 }, // center of USA
+        center: { lat: 39.8283, lng: -98.5795 },
         zoom: 4,
+      });
+
+      drawingManager = new google.maps.drawing.DrawingManager({
+        drawingMode: google.maps.drawing.OverlayType.POLYGON,
+        drawingControl: true,
+        drawingControlOptions: {
+          position: google.maps.ControlPosition.TOP_CENTER,
+          drawingModes: ["polygon"],
+        },
+        polygonOptions: {
+          fillColor: "#FF0000",
+          fillOpacity: 0.4,
+          strokeWeight: 2,
+          editable: true,
+        },
+      });
+      drawingManager.setMap(map);
+
+      // When a new shape is drawn, remove any old one so there's only ever one
+      google.maps.event.addListener(drawingManager, "overlaycomplete", function (event) {
+        if (currentPolygon) {
+          currentPolygon.setMap(null);
+        }
+        currentPolygon = event.overlay;
       });
     }
 
@@ -36,6 +60,6 @@
       });
     }
   </script>
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAcyAvzOdRiSogOehJRXOkYEyisWhHoaIQ&callback=initMap" async></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAcyAvzOdRiSogOehJRXOkYEyisWhHoaIQ&libraries=drawing&callback=initMap" async></script>
 </body>
 </html>
