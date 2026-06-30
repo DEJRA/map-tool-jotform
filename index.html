@@ -157,8 +157,8 @@
       const first = polygonPoints[0];
       pathStr += `|${first.lat()},${first.lng()}`;
 
-      const url = `https://maps.googleapis.com/maps/api/staticmap?size=640x400&maptype=roadmap&path=${encodeURIComponent(pathStr)}&key=${API_KEY}`;
-
+      const url = `/api/generate-map?path=${encodeURIComponent(pathStr)}`;
+      
       document.getElementById("imageContainer").innerHTML = `
         <h3>Step 3: Copy your image link</h3>
         <img id="resultImage" src="${url}">
