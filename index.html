@@ -5,16 +5,19 @@
   <style>
     #map { height: 500px; width: 100%; }
     body { font-family: sans-serif; padding: 10px; }
+    button { margin-left: 10px; }
   </style>
 </head>
 <body>
   <h2>Enter an address:</h2>
   <input id="addressInput" type="text" placeholder="123 Main St, City, State" style="width: 300px;">
   <button onclick="geocodeAddress()">Go</button>
+  <button onclick="clearPolygon()">Clear Shape</button>
+  <p>After locating your address, click points on the map to draw a shape. Click "Clear Shape" to start over.</p>
   <div id="map"></div>
 
   <script>
-    let map, geocoder, drawingManager, currentPolygon;
+    let map, geocoder, currentPolygon, polygonPoints = [];
 
     function initMap() {
       geocoder = new google.maps.Geocoder();
@@ -23,29 +26,33 @@
         zoom: 4,
       });
 
-      drawingManager = new google.maps.drawing.DrawingManager({
-        drawingMode: google.maps.drawing.OverlayType.POLYGON,
-        drawingControl: true,
-        drawingControlOptions: {
-          position: google.maps.ControlPosition.TOP_CENTER,
-          drawingModes: ["polygon"],
-        },
-        polygonOptions: {
-          fillColor: "#FF0000",
-          fillOpacity: 0.4,
-          strokeWeight: 2,
-          editable: true,
-        },
+      // Every click on the map adds a point to the current shape
+      map.addListener("click", (event) => {
+        polygonPoints.push(event.latLng);
+        drawPolygon();
       });
-      drawingManager.setMap(map);
+    }
 
-      // When a new shape is drawn, remove any old one so there's only ever one
-      google.maps.event.addListener(drawingManager, "overlaycomplete", function (event) {
-        if (currentPolygon) {
-          currentPolygon.setMap(null);
-        }
-        currentPolygon = event.overlay;
+    function drawPolygon() {
+      if (currentPolygon) {
+        currentPolygon.setMap(null);
+      }
+      currentPolygon = new google.maps.Polygon({
+        paths: polygonPoints,
+        fillColor: "#FF0000",
+        fillOpacity: 0.4,
+        strokeWeight: 2,
+        editable: true,
       });
+      currentPolygon.setMap(map);
+    }
+
+    function clearPolygon() {
+      if (currentPolygon) {
+        currentPolygon.setMap(null);
+      }
+      polygonPoints = [];
+      currentPolygon = null;
     }
 
     function geocodeAddress() {
@@ -60,6 +67,6 @@
       });
     }
   </script>
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAcyAvzOdRiSogOehJRXOkYEyisWhHoaIQ&libraries=drawing&callback=initMap" async></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAcyAvzOdRiSogOehJRXOkYEyisWhHoaIQ&callback=initMap" async></script>
 </body>
 </html>
