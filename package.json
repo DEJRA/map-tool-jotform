@@ -1,0 +1,6 @@
+{
+  "type": "module",
+  "dependencies": {
+    "cloudinary": "^2.0.0"
+  }
+}
