@@ -104,8 +104,9 @@
 
   <div class="controls" id="actionControls">
     <button class="btn-secondary" onclick="clearPolygon()">Clear Shape</button>
-    <button class="btn-success"   id="generateBtn" onclick="generatePreview()">Generate Image</button>
-    <button class="btn-primary"   id="submitBtn"   onclick="submitAndCopy()" style="display:none;">Submit &amp; Copy Link</button>
+    <button class="btn-success"   id="generateBtn"  onclick="generatePreview()"  >Generate Image</button>
+    <button class="btn-primary"   id="approveBtn"   onclick="approveImage()"     style="display:none;">Approve Image</button>
+    <button class="btn-success"   id="copyLinkBtn"  onclick="copyLinkClicked()"  style="display:none;">Copy Link</button>
   </div>
 
   <script>
@@ -149,7 +150,8 @@
       document.getElementById("map").style.display = "block";
 
       document.getElementById("generateBtn").style.display = "inline-block";
-      document.getElementById("submitBtn").style.display = "none";
+      document.getElementById("approveBtn").style.display = "none";
+      document.getElementById("copyLinkBtn").style.display = "none";
 
       document.getElementById("stepLabel").textContent = "Step 2: Click points on the map to draw your area";
       document.getElementById("stepHint").textContent = 'Click multiple points to outline the shape. Click "Clear Shape" to start over.';
@@ -207,23 +209,23 @@
       previewGenerated = true;
 
       document.getElementById("generateBtn").style.display = "none";
-      document.getElementById("submitBtn").style.display = "inline-block";
+      document.getElementById("approveBtn").style.display = "inline-block";
 
-      document.getElementById("stepLabel").textContent = "Step 3: Review and submit your area";
-      document.getElementById("stepHint").textContent = 'Happy with your selection? Click "Submit & Copy Link" to save it and copy the link. Click "Clear Shape" to start over.';
+      document.getElementById("stepLabel").textContent = "Step 3: Review your area";
+      document.getElementById("stepHint").textContent = 'Happy with your selection? Click "Approve Image" to save it. Click "Clear Shape" to start over.';
     }
 
-    // Step 3 → Done: two clearly separated phases
-    async function submitAndCopy() {
-      const btn = document.getElementById("submitBtn");
+    let savedImageUrl = null;
+
+    // Step 3 → Step 4: submit to GitHub, then reveal Copy Link button
+    async function approveImage() {
+      const btn = document.getElementById("approveBtn");
       const overlay = document.getElementById("loadingOverlay");
 
-      // ── Phase 1: Submit to GitHub ──────────────────────────────────────────
       btn.disabled = true;
       btn.textContent = "Submitting...";
       overlay.style.display = "flex";
 
-      let imageUrl;
       try {
         const response = await fetch("/api/generate-map", {
           method: "POST",
@@ -240,32 +242,39 @@
           throw new Error(result.error);
         }
 
-        imageUrl = result.imageUrl;
+        savedImageUrl = result.imageUrl;
 
         // Swap preview for the permanent GitHub-hosted image
-        document.getElementById("resultImage").src = imageUrl;
+        document.getElementById("resultImage").src = savedImageUrl;
 
       } catch (error) {
         overlay.style.display = "none";
         btn.disabled = false;
-        btn.textContent = "Submit & Copy Link";
+        btn.textContent = "Approve Image";
         alert("Submission failed. Please try again.");
         return;
       }
 
-      // Submission complete — hide overlay before clipboard step
+      // Submission complete — swap Approve button for Copy Link button
       overlay.style.display = "none";
-      document.getElementById("stepLabel").textContent = "Done!";
+      btn.style.display = "none";
+      document.getElementById("copyLinkBtn").style.display = "inline-block";
 
-      // ── Phase 2: Copy link to clipboard ────────────────────────────────────
-      // Uses execCommand('copy') instead of navigator.clipboard —
-      // works reliably inside cross-origin iframes like JotForm embeds
-      btn.textContent = "Copying Link...";
+      document.getElementById("stepLabel").textContent = "Step 4: Copy your link";
+      document.getElementById("stepHint").textContent = 'Click "Copy Link" then paste it into the "Map Image Link" field on the form below.';
+    }
 
+    // Step 4 → Done: copy link directly from user gesture — no async needed
+    function copyLinkClicked() {
+      if (!savedImageUrl) return;
+
+      const btn = document.getElementById("copyLinkBtn");
+
+      // execCommand runs synchronously on the user click — no await, no gesture loss
       const tempInput = document.createElement("textarea");
-      tempInput.value = imageUrl;
+      tempInput.value = savedImageUrl;
       tempInput.style.position = "fixed";
-      tempInput.style.opacity = "0";
+      tempInput.style.top = "-9999px";
       document.body.appendChild(tempInput);
       tempInput.focus();
       tempInput.select();
@@ -273,12 +282,21 @@
       document.body.removeChild(tempInput);
 
       if (copied) {
-        btn.textContent = "✓ Link Copied";
+        btn.textContent = "✓ Copied";
+        btn.disabled = true;
+        document.getElementById("stepLabel").textContent = "Done!";
         document.getElementById("stepHint").textContent = 'Your link has been copied. Paste it into the "Map Image Link" field on the form below. Click "Clear Shape" to start over.';
       } else {
-        // Last resort fallback — show the URL for manual copy
+        // Genuine fallback — execCommand failed, show the URL
         btn.style.display = "none";
-        document.getElementById("stepHint").innerHTML = 'Submission saved. Copy your link below and paste it into the "Map Image Link" field on the form.<br><br><input type="text" value="' + imageUrl + '" readonly style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:12px;margin-top:4px;" onclick="this.select();">';
+        document.getElementById("stepHint").innerHTML =
+          'Copy your link below and paste it into the "Map Image Link" field on the form.' +
+          '<br><br><input type="text" id="finalUrl" value="' + savedImageUrl + '" readonly ' +
+          'style="width:100%;padding:8px;border:1px solid #2563eb;border-radius:6px;font-size:12px;margin-top:4px;outline:none;" />';
+        setTimeout(() => {
+          const field = document.getElementById("finalUrl");
+          if (field) { field.focus(); field.select(); }
+        }, 50);
       }
     }
   </script>
