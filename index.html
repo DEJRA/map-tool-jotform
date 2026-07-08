@@ -56,12 +56,6 @@
     #imageContainer h3 { font-size: 14px; font-weight: 700; margin: 12px 0 6px; }
     .copy-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
     .copy-row p { margin: 0; font-size: 12px; color: #555; }
-    #statusMessage {
-      margin-top: 8px;
-      font-size: 12px;
-      color: #555;
-      font-style: italic;
-    }
   </style>
 </head>
 <body>
@@ -80,7 +74,6 @@
   </div>
 
   <div id="imageContainer"></div>
-  <div id="statusMessage"></div>
 
   <script>
     let map, geocoder, currentPolygon, polygonPoints = [];
@@ -114,7 +107,6 @@
       polygonPoints = [];
       currentPolygon = null;
       document.getElementById("imageContainer").innerHTML = "";
-      document.getElementById("statusMessage").textContent = "";
     }
 
     function geocodeAddress() {
@@ -134,10 +126,7 @@
       coords.push([polygonPoints[0].lng(), polygonPoints[0].lat()]);
       return {
         type: "Feature",
-        geometry: {
-          type: "Polygon",
-          coordinates: [coords]
-        }
+        geometry: { type: "Polygon", coordinates: [coords] }
       };
     }
 
@@ -149,8 +138,7 @@
     }
 
     function copyUrl() {
-      const box = document.getElementById("urlBox");
-      navigator.clipboard.writeText(box.value)
+      navigator.clipboard.writeText(document.getElementById("urlBox").value)
         .then(() => alert("Image link copied!"))
         .catch(() => alert("Couldn't copy automatically. Please try again."));
     }
@@ -162,18 +150,15 @@
       }
 
       document.getElementById("imageContainer").innerHTML = `<p>Generating image, please wait...</p>`;
-      document.getElementById("statusMessage").textContent = "";
 
       try {
-        const payload = {
-          path: buildPathStr(),
-          geojson: buildGeoJSON()
-        };
-
         const response = await fetch("/api/generate-map", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+          body: JSON.stringify({
+            path: buildPathStr(),
+            geojson: buildGeoJSON()
+          })
         });
 
         const result = await response.json();
@@ -183,7 +168,8 @@
           return;
         }
 
-        // Show image and copy button — zip codes are stored silently in the background
+        // The image URL contains the filename which serves as the attribution link
+        // to the matching JSON record in GitHub — no extra field needed
         document.getElementById("imageContainer").innerHTML = `
           <h3>Step 3: Copy your image link</h3>
           <img id="resultImage" src="${result.imageUrl}">
@@ -193,11 +179,6 @@
             <p>Then paste it into the "Map Image Link" field on the form below.</p>
           </div>
         `;
-
-        // Quietly confirm zip codes were captured without surfacing them to the user
-        if (result.zipCodes && result.zipCodes.length > 0) {
-          document.getElementById("statusMessage").textContent = "Area data saved successfully.";
-        }
 
       } catch (error) {
         document.getElementById("imageContainer").innerHTML = `<p>Something went wrong. Please try again.</p>`;
