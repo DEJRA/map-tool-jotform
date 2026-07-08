@@ -47,20 +47,21 @@
     .btn-secondary:hover { background-color: #e2e2e2; }
     .btn-success { background-color: #16a34a; color: white; }
     .btn-success:hover { background-color: #15803d; }
-    #resultImage { margin-top: 10px; max-width: 100%; border-radius: 6px; border: 1px solid #ddd; }
+    #resultImage {
+      margin-top: 10px;
+      max-width: 100%;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+    }
     #imageContainer h3 { font-size: 14px; font-weight: 700; margin: 12px 0 6px; }
     .copy-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
     .copy-row p { margin: 0; font-size: 12px; color: #555; }
-    .zip-box {
-      margin-top: 10px;
-      padding: 8px 10px;
-      background: #f8f8f8;
-      border: 1px solid #ddd;
-      border-radius: 6px;
+    #statusMessage {
+      margin-top: 8px;
       font-size: 12px;
-      line-height: 1.6;
+      color: #555;
+      font-style: italic;
     }
-    .zip-box strong { display: block; margin-bottom: 4px; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -79,6 +80,7 @@
   </div>
 
   <div id="imageContainer"></div>
+  <div id="statusMessage"></div>
 
   <script>
     let map, geocoder, currentPolygon, polygonPoints = [];
@@ -112,6 +114,7 @@
       polygonPoints = [];
       currentPolygon = null;
       document.getElementById("imageContainer").innerHTML = "";
+      document.getElementById("statusMessage").textContent = "";
     }
 
     function geocodeAddress() {
@@ -127,9 +130,7 @@
     }
 
     function buildGeoJSON() {
-      // Build a GeoJSON polygon from the drawn points
       const coords = polygonPoints.map(p => [p.lng(), p.lat()]);
-      // Close the polygon by repeating the first point
       coords.push([polygonPoints[0].lng(), polygonPoints[0].lat()]);
       return {
         type: "Feature",
@@ -147,13 +148,21 @@
       return pathStr;
     }
 
+    function copyUrl() {
+      const box = document.getElementById("urlBox");
+      navigator.clipboard.writeText(box.value)
+        .then(() => alert("Image link copied!"))
+        .catch(() => alert("Couldn't copy automatically. Please try again."));
+    }
+
     async function generateImage() {
       if (polygonPoints.length < 3) {
         alert("Please draw a shape with at least 3 points first.");
         return;
       }
 
-      document.getElementById("imageContainer").innerHTML = `<p>Generating image and looking up zip codes, please wait...</p>`;
+      document.getElementById("imageContainer").innerHTML = `<p>Generating image, please wait...</p>`;
+      document.getElementById("statusMessage").textContent = "";
 
       try {
         const payload = {
@@ -170,44 +179,29 @@
         const result = await response.json();
 
         if (result.error) {
-          document.getElementById("imageContainer").innerHTML = `<p>Something went wrong: ${result.error}</p>`;
+          document.getElementById("imageContainer").innerHTML = `<p>Something went wrong. Please try again.</p>`;
           return;
         }
 
-        const zipList = result.zipCodes && result.zipCodes.length > 0
-          ? result.zipCodes.join(", ")
-          : "No zip codes found for this area.";
-
+        // Show image and copy button — zip codes are stored silently in the background
         document.getElementById("imageContainer").innerHTML = `
-          <h3>Step 3: Copy your image link and zip codes</h3>
+          <h3>Step 3: Copy your image link</h3>
           <img id="resultImage" src="${result.imageUrl}">
-          <div class="zip-box">
-            <strong>Zip Codes in this area:</strong>
-            ${zipList}
-          </div>
           <div class="copy-row">
             <input id="urlBox" type="text" value="${result.imageUrl}" style="display:none;">
-            <input id="zipBox" type="text" value="${zipList}" style="display:none;">
-            <button class="btn-primary" onclick="copyUrl()">Copy Image Link</button>
-            <button class="btn-secondary" onclick="copyZips()">Copy Zip Codes</button>
+            <button class="btn-primary" onclick="copyUrl()">Copy Link</button>
+            <p>Then paste it into the "Map Image Link" field on the form below.</p>
           </div>
-          <p style="margin-top:8px;">Paste the image link and zip codes into their respective fields on the form below.</p>
         `;
+
+        // Quietly confirm zip codes were captured without surfacing them to the user
+        if (result.zipCodes && result.zipCodes.length > 0) {
+          document.getElementById("statusMessage").textContent = "Area data saved successfully.";
+        }
+
       } catch (error) {
         document.getElementById("imageContainer").innerHTML = `<p>Something went wrong. Please try again.</p>`;
       }
-    }
-
-    function copyUrl() {
-      navigator.clipboard.writeText(document.getElementById("urlBox").value)
-        .then(() => alert("Image link copied!"))
-        .catch(() => alert("Couldn't copy automatically. Please try again."));
-    }
-
-    function copyZips() {
-      navigator.clipboard.writeText(document.getElementById("zipBox").value)
-        .then(() => alert("Zip codes copied!"))
-        .catch(() => alert("Couldn't copy automatically. Please try again."));
     }
   </script>
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAcyAvzOdRiSogOehJRXOkYEyisWhHoaIQ&callback=initMap" async></script>
