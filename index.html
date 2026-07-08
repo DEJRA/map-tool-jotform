@@ -15,13 +15,33 @@
     }
     h2 { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
     p { font-size: 12px; color: #555; margin-bottom: 6px; }
-    #map {
+
+    /* Map and result image share the same fixed-height container */
+    #mapContainer {
+      position: relative;
       height: 340px;
+      width: 100%;
+      margin: 8px 0;
+    }
+    #map {
+      position: absolute;
+      top: 0; left: 0;
+      height: 100%;
       width: 100%;
       border-radius: 6px;
       border: 1px solid #ddd;
-      margin: 8px 0;
     }
+    #resultImage {
+      position: absolute;
+      top: 0; left: 0;
+      height: 100%;
+      width: 100%;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+      display: none;
+    }
+
     .controls { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
     input[type="text"] {
       padding: 8px 10px;
@@ -47,15 +67,25 @@
     .btn-secondary:hover { background-color: #e2e2e2; }
     .btn-success { background-color: #16a34a; color: white; }
     .btn-success:hover { background-color: #15803d; }
-    #resultImage {
-      margin-top: 10px;
-      max-width: 100%;
+
+    #stepLabel { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+    #stepHint { font-size: 12px; color: #555; margin-bottom: 6px; }
+
+    /* Loading overlay on top of the map while generating */
+    #loadingOverlay {
+      position: absolute;
+      top: 0; left: 0;
+      height: 100%;
+      width: 100%;
+      background: rgba(255,255,255,0.75);
       border-radius: 6px;
-      border: 1px solid #ddd;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      color: #555;
+      font-style: italic;
     }
-    #imageContainer h3 { font-size: 14px; font-weight: 700; margin: 12px 0 6px; }
-    .copy-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
-    .copy-row p { margin: 0; font-size: 12px; color: #555; }
   </style>
 </head>
 <body>
@@ -65,18 +95,25 @@
     <button class="btn-primary" onclick="geocodeAddress()">Go</button>
   </div>
 
-  <h2>Step 2: Click points on the map to draw your area</h2>
-  <p>Click multiple points to outline the shape. Click "Clear Shape" to start over.</p>
-  <div id="map"></div>
-  <div class="controls">
-    <button class="btn-secondary" onclick="clearPolygon()">Clear Shape</button>
-    <button class="btn-success" onclick="generateImage()">Generate Image</button>
+  <div id="stepLabel">Step 2: Click points on the map to draw your area</div>
+  <div id="stepHint">Click multiple points to outline the shape. Click "Clear Shape" to start over.</div>
+
+  <div id="mapContainer">
+    <div id="map"></div>
+    <img id="resultImage" src="" alt="Generated map">
+    <div id="loadingOverlay">Generating image, please wait...</div>
   </div>
 
-  <div id="imageContainer"></div>
+  <div class="controls" id="actionControls">
+    <button class="btn-secondary" id="clearBtn" onclick="clearPolygon()">Clear Shape</button>
+    <button class="btn-success" id="generateBtn" onclick="generateImage()">Generate Image</button>
+    <input id="urlBox" type="text" style="display:none;">
+    <button class="btn-primary" id="copyBtn" style="display:none;" onclick="copyUrl()">Copy Link</button>
+  </div>
 
   <script>
     let map, geocoder, currentPolygon, polygonPoints = [];
+    let imageGenerated = false;
 
     function initMap() {
       geocoder = new google.maps.Geocoder();
@@ -85,6 +122,7 @@
         zoom: 4,
       });
       map.addListener("click", (event) => {
+        if (imageGenerated) return;
         polygonPoints.push(event.latLng);
         drawPolygon();
       });
@@ -103,10 +141,29 @@
     }
 
     function clearPolygon() {
+      // Always reset everything back to a clean starting state
       if (currentPolygon) currentPolygon.setMap(null);
       polygonPoints = [];
       currentPolygon = null;
-      document.getElementById("imageContainer").innerHTML = "";
+      imageGenerated = false;
+
+      // Hide result image, show map
+      document.getElementById("resultImage").style.display = "none";
+      document.getElementById("map").style.display = "block";
+
+      // Reset buttons
+      document.getElementById("generateBtn").style.display = "inline-block";
+      document.getElementById("copyBtn").style.display = "none";
+      document.getElementById("urlBox").value = "";
+
+      // Reset labels
+      document.getElementById("stepLabel").textContent = "Step 2: Click points on the map to draw your area";
+      document.getElementById("stepHint").textContent = 'Click multiple points to outline the shape. Click "Clear Shape" to start over.';
+
+      // Reset address input and map view
+      document.getElementById("addressInput").value = "";
+      map.setCenter({ lat: 39.8283, lng: -98.5795 });
+      map.setZoom(4);
     }
 
     function geocodeAddress() {
@@ -151,7 +208,10 @@
         return;
       }
 
-      document.getElementById("imageContainer").innerHTML = `<p>Generating image, please wait...</p>`;
+      // Show loading overlay over the map while generating
+      const overlay = document.getElementById("loadingOverlay");
+      overlay.style.display = "flex";
+      document.getElementById("generateBtn").disabled = true;
 
       try {
         const response = await fetch("/api/generate-map", {
@@ -164,24 +224,35 @@
         });
 
         const result = await response.json();
+        overlay.style.display = "none";
+        document.getElementById("generateBtn").disabled = false;
 
         if (result.error) {
-          document.getElementById("imageContainer").innerHTML = `<p>Something went wrong. Please try again.</p>`;
+          alert("Something went wrong. Please try again.");
           return;
         }
 
-        document.getElementById("imageContainer").innerHTML = `
-          <h3>Step 3: Copy your image link</h3>
-          <img id="resultImage" src="${result.imageUrl}">
-          <div class="copy-row">
-            <input id="urlBox" type="text" value="${result.imageUrl}" style="display:none;">
-            <button class="btn-primary" onclick="copyUrl()">Copy Link</button>
-            <p>Then paste it into the "Map Image Link" field on the form below.</p>
-          </div>
-        `;
+        // Replace map with generated image in the same container
+        const img = document.getElementById("resultImage");
+        img.src = result.imageUrl;
+        img.style.display = "block";
+        document.getElementById("map").style.display = "none";
+        imageGenerated = true;
+
+        // Swap Generate button for Copy Link button
+        document.getElementById("generateBtn").style.display = "none";
+        const urlBox = document.getElementById("urlBox");
+        urlBox.value = result.imageUrl;
+        document.getElementById("copyBtn").style.display = "inline-block";
+
+        // Update step label
+        document.getElementById("stepLabel").textContent = "Step 3: Copy your image link";
+        document.getElementById("stepHint").textContent = 'Paste it into the "Map Image Link" field on the form below. Click "Clear Shape" to start over.';
 
       } catch (error) {
-        document.getElementById("imageContainer").innerHTML = `<p>Something went wrong. Please try again.</p>`;
+        overlay.style.display = "none";
+        document.getElementById("generateBtn").disabled = false;
+        alert("Something went wrong. Please try again.");
       }
     }
   </script>
