@@ -18,27 +18,37 @@ export default async function handler(req, res) {
     console.log("Google status:", googleResponse.status);
     const buffer = Buffer.from(await googleResponse.arrayBuffer());
     const base64Image = buffer.toString("base64");
-    console.log("Image size:", base64Image.length);
 
     // Step 2: Look up zip codes using Census TIGERweb
-    // Use actual polygon geometry instead of bounding box for accuracy
     const coords = geojson.geometry.coordinates[0];
     const esriRings = [coords.map(c => [c[0], c[1]])];
-    const esriGeometry = JSON.stringify({ rings: esriRings });
+    const esriGeometry = JSON.stringify({ rings: esriRings, spatialReference: { wkid: 4326 } });
 
-    const tigerUrl = `https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/PUMA_TAD_TAZ_UGA_ZCTA/MapServer/2/query?geometry=${encodeURIComponent(esriGeometry)}&geometryType=esriGeometryPolygon&spatialRel=esriSpatialRelIntersects&outFields=ZCTA5CE20,ZCTA5CE10&returnGeometry=false&f=json`;
+    // inSR=4326 tells TIGERweb our coordinates are standard lat/lng (WGS84)
+    const tigerUrl = `https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/PUMA_TAD_TAZ_UGA_ZCTA/MapServer/2/query?geometry=${encodeURIComponent(esriGeometry)}&geometryType=esriGeometryPolygon&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=false&f=json`;
 
     console.log("Querying TIGERweb...");
     const tigerResponse = await fetch(tigerUrl);
     const tigerData = await tigerResponse.json();
-    console.log("TIGERweb raw response:", JSON.stringify(tigerData).substring(0, 500));
 
+    // Log the full response so we can see field names and values
+    console.log("TIGERweb status:", tigerResponse.status);
+    console.log("TIGERweb error:", JSON.stringify(tigerData.error));
+    console.log("TIGERweb feature count:", tigerData.features?.length);
+    if (tigerData.features?.length > 0) {
+      console.log("First feature attributes:", JSON.stringify(tigerData.features[0].attributes));
+    }
+    if (tigerData.fields) {
+      console.log("Available fields:", tigerData.fields.map(f => f.name).join(", "));
+    }
+
+    // Try every possible ZCTA field name Census has used across versions
     let zipCodes = [];
     if (tigerData.features && tigerData.features.length > 0) {
-      zipCodes = tigerData.features
-        .map(f => f.attributes.ZCTA5CE20 || f.attributes.ZCTA5CE10)
-        .filter(Boolean)
-        .sort();
+      zipCodes = tigerData.features.map(f => {
+        const a = f.attributes;
+        return a.ZCTA5CE20 || a.ZCTA5CE10 || a.ZCTA5 || a.GEOID20 || a.GEOID10 || a.GEOID || a.ZIP;
+      }).filter(Boolean).sort();
     }
     console.log("Zip codes found:", zipCodes.length, zipCodes);
 
@@ -78,14 +88,7 @@ export default async function handler(req, res) {
     const imageUrl = imageResult.content.download_url;
 
     // Upload submission JSON to GitHub
-    const submissionData = {
-      timestamp,
-      imageUrl,
-      zipCodes,
-      geojson
-    };
-
-    console.log("Uploading submission JSON to GitHub...");
+    const submissionData = { timestamp, imageUrl, zipCodes, geojson };
     const jsonUpload = await fetch(`${repoBase}/${jsonPath}`, {
       method: "PUT",
       headers: githubHeaders,
@@ -94,14 +97,9 @@ export default async function handler(req, res) {
         content: Buffer.from(JSON.stringify(submissionData, null, 2)).toString("base64")
       })
     });
-    const jsonResult = await jsonUpload.json();
     console.log("GitHub JSON upload status:", jsonUpload.status);
 
-    res.status(200).json({
-      imageUrl,
-      zipCodes,
-      geojson
-    });
+    res.status(200).json({ imageUrl, zipCodes, geojson });
 
   } catch (error) {
     console.error("FULL ERROR:", error);
