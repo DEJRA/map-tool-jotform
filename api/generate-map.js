@@ -11,29 +11,39 @@ export default async function handler(req, res) {
     return;
   }
 
-  function getSamplePoints(coords) {
-    const points = [];
-    const lats = coords.map(c => c[1]);
+  // Ray casting algorithm — returns true if point is inside polygon
+  function pointInPolygon(lat, lng, coords) {
+    let inside = false;
+    for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
+      const xi = coords[i][0], yi = coords[i][1];
+      const xj = coords[j][0], yj = coords[j][1];
+      const intersect = ((yi > lat) !== (yj > lat)) &&
+        (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  // Build a uniform grid of points inside the polygon
+  // gridSpacing of 0.04 degrees ≈ 2.5 miles — fine enough to catch small urban zip codes
+  function getGridPoints(coords, gridSpacing = 0.04) {
     const lngs = coords.map(c => c[0]);
-    const centerLat = lats.reduce((a, b) => a + b) / lats.length;
-    const centerLng = lngs.reduce((a, b) => a + b) / lngs.length;
+    const lats = coords.map(c => c[1]);
+    const minLng = Math.min(...lngs);
+    const maxLng = Math.max(...lngs);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
 
-    points.push({ lat: centerLat, lng: centerLng });
-
-    for (let i = 0; i < coords.length - 1; i++) {
-      points.push({
-        lat: (coords[i][1] + centerLat) / 2,
-        lng: (coords[i][0] + centerLng) / 2
-      });
+    const points = [];
+    for (let lat = minLat; lat <= maxLat; lat += gridSpacing) {
+      for (let lng = minLng; lng <= maxLng; lng += gridSpacing) {
+        if (pointInPolygon(lat, lng, coords)) {
+          points.push({ lat, lng });
+        }
+      }
     }
 
-    for (let i = 0; i < coords.length - 1; i++) {
-      points.push({
-        lat: (coords[i][1] + coords[i + 1][1]) / 2,
-        lng: (coords[i][0] + coords[i + 1][0]) / 2
-      });
-    }
-
+    console.log(`Grid generated ${points.length} interior points`);
     return points;
   }
 
@@ -63,12 +73,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Build a human-readable timestamp for the filename: map-YYYYMMDD-HHMMSS
+    // Build timestamp-based file ID for attribution
     const now = new Date();
     const datePart = now.toISOString().slice(0, 10).replace(/-/g, "");
     const timePart = now.toISOString().slice(11, 19).replace(/:/g, "");
     const fileId = `map-${datePart}-${timePart}`;
-
     console.log("File ID:", fileId);
 
     // Step 1: Generate map image from Google Static Maps
@@ -78,20 +87,25 @@ export default async function handler(req, res) {
     const buffer = Buffer.from(await googleResponse.arrayBuffer());
     const base64Image = buffer.toString("base64");
 
-    // Step 2: Look up zip codes using Google Geocoding API
+    // Step 2: Look up zip codes using grid sampling
     const coords = geojson.geometry.coordinates[0];
-    const samplePoints = getSamplePoints(coords);
-    console.log("Sampling", samplePoints.length, "points across polygon...");
+    const gridPoints = getGridPoints(coords);
 
-    const zipResults = await Promise.all(
-      samplePoints.map(({ lat, lng }) => getZipForPoint(lat, lng))
-    );
+    // Batch requests in groups of 10 to avoid hitting rate limits
+    const zipSet = new Set();
+    const batchSize = 10;
+    for (let i = 0; i < gridPoints.length; i += batchSize) {
+      const batch = gridPoints.slice(i, i + batchSize);
+      const results = await Promise.all(
+        batch.map(({ lat, lng }) => getZipForPoint(lat, lng))
+      );
+      results.filter(Boolean).forEach(z => zipSet.add(z));
+    }
 
-    const zipCodes = [...new Set(zipResults.filter(Boolean))].sort();
+    const zipCodes = [...zipSet].sort();
     console.log("Zip codes found:", zipCodes.length, zipCodes);
 
-    // Step 3: Store in GitHub using fileId as the shared filename
-    // Both the image and JSON use the same fileId so they are always matched
+    // Step 3: Store image and JSON in GitHub using fileId as shared key
     const imagePath = `map-data/images/${fileId}.png`;
     const jsonPath = `map-data/submissions/${fileId}.json`;
 
@@ -125,7 +139,7 @@ export default async function handler(req, res) {
 
     const imageUrl = imageResult.content.download_url;
 
-    // Upload submission JSON — includes the imageUrl so the JSON is self-contained
+    // Upload submission JSON
     const submissionData = { fileId, imageUrl, zipCodes, geojson };
     const jsonUpload = await fetch(`${repoBase}/${jsonPath}`, {
       method: "PUT",
@@ -137,7 +151,6 @@ export default async function handler(req, res) {
     });
     console.log("GitHub JSON upload status:", jsonUpload.status);
 
-    // Return the imageUrl — the filename embedded in it IS the attribution link
     res.status(200).json({ imageUrl, zipCodes, fileId });
 
   } catch (error) {
