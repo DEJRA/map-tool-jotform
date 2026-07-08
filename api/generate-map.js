@@ -44,7 +44,6 @@ export default async function handler(req, res) {
       const data = await response.json();
 
       if (data.status !== "OK" || !data.results || data.results.length === 0) {
-        console.log(`No results for ${lat},${lng}: ${data.status}`);
         return null;
       }
 
@@ -64,12 +63,22 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Build a human-readable timestamp for the filename: map-YYYYMMDD-HHMMSS
+    const now = new Date();
+    const datePart = now.toISOString().slice(0, 10).replace(/-/g, "");
+    const timePart = now.toISOString().slice(11, 19).replace(/:/g, "");
+    const fileId = `map-${datePart}-${timePart}`;
+
+    console.log("File ID:", fileId);
+
+    // Step 1: Generate map image from Google Static Maps
     const googleUrl = `https://maps.googleapis.com/maps/api/staticmap?size=640x400&maptype=roadmap&path=${encodeURIComponent(path)}&key=${process.env.GOOGLE_SERVER_API_KEY}`;
     const googleResponse = await fetch(googleUrl);
     console.log("Google status:", googleResponse.status);
     const buffer = Buffer.from(await googleResponse.arrayBuffer());
     const base64Image = buffer.toString("base64");
 
+    // Step 2: Look up zip codes using Google Geocoding API
     const coords = geojson.geometry.coordinates[0];
     const samplePoints = getSamplePoints(coords);
     console.log("Sampling", samplePoints.length, "points across polygon...");
@@ -81,9 +90,10 @@ export default async function handler(req, res) {
     const zipCodes = [...new Set(zipResults.filter(Boolean))].sort();
     console.log("Zip codes found:", zipCodes.length, zipCodes);
 
-    const timestamp = Date.now();
-    const imagePath = `map-data/images/map-${timestamp}.png`;
-    const jsonPath = `map-data/submissions/submission-${timestamp}.json`;
+    // Step 3: Store in GitHub using fileId as the shared filename
+    // Both the image and JSON use the same fileId so they are always matched
+    const imagePath = `map-data/images/${fileId}.png`;
+    const jsonPath = `map-data/submissions/${fileId}.json`;
 
     const githubHeaders = {
       "Authorization": `Bearer ${process.env.GITHUB_TOKEN}`,
@@ -94,12 +104,13 @@ export default async function handler(req, res) {
 
     const repoBase = `https://api.github.com/repos/${process.env.GITHUB_REPO}/contents`;
 
+    // Upload image
     console.log("Uploading image to GitHub...");
     const imageUpload = await fetch(`${repoBase}/${imagePath}`, {
       method: "PUT",
       headers: githubHeaders,
       body: JSON.stringify({
-        message: `Add map image ${timestamp}`,
+        message: `Add map image ${fileId}`,
         content: base64Image
       })
     });
@@ -114,18 +125,20 @@ export default async function handler(req, res) {
 
     const imageUrl = imageResult.content.download_url;
 
-    const submissionData = { timestamp, imageUrl, zipCodes, geojson };
+    // Upload submission JSON — includes the imageUrl so the JSON is self-contained
+    const submissionData = { fileId, imageUrl, zipCodes, geojson };
     const jsonUpload = await fetch(`${repoBase}/${jsonPath}`, {
       method: "PUT",
       headers: githubHeaders,
       body: JSON.stringify({
-        message: `Add submission ${timestamp}`,
+        message: `Add submission ${fileId}`,
         content: Buffer.from(JSON.stringify(submissionData, null, 2)).toString("base64")
       })
     });
     console.log("GitHub JSON upload status:", jsonUpload.status);
 
-    res.status(200).json({ imageUrl, zipCodes, geojson });
+    // Return the imageUrl — the filename embedded in it IS the attribution link
+    res.status(200).json({ imageUrl, zipCodes, fileId });
 
   } catch (error) {
     console.error("FULL ERROR:", error);
