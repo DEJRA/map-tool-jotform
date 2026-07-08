@@ -241,18 +241,23 @@
         // Swap preview image for the permanent GitHub-hosted image
         document.getElementById("resultImage").src = result.imageUrl;
 
-        // Copy the permanent URL to clipboard
-        await navigator.clipboard.writeText(result.imageUrl);
-
         document.getElementById("stepLabel").textContent = "Done!";
-        document.getElementById("stepHint").textContent = 'Your link has been copied. Paste it into the "Map Image Link" field on the form below. Click "Clear Shape" to start over.';
-        document.getElementById("submitBtn").textContent = "✓ Copied";
         document.getElementById("submitBtn").disabled = true;
+
+        // Try clipboard — falls back to a visible URL if blocked inside an iframe
+        try {
+          await navigator.clipboard.writeText(result.imageUrl);
+          document.getElementById("submitBtn").textContent = "✓ Link Copied";
+          document.getElementById("stepHint").textContent = 'Your link has been copied. Paste it into the "Map Image Link" field on the form below. Click "Clear Shape" to start over.';
+        } catch (clipboardError) {
+          document.getElementById("submitBtn").style.display = "none";
+          document.getElementById("stepHint").innerHTML = 'Submission saved. Copy your link below and paste it into the "Map Image Link" field on the form.<br><br><input type="text" id="finalUrl" value="' + result.imageUrl + '" readonly style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:12px;margin-top:4px;" onclick="this.select();">';
+        }
 
       } catch (error) {
         overlay.style.display = "none";
         document.getElementById("submitBtn").disabled = false;
-        alert("Something went wrong. Please try again.");
+        alert("Submission failed. Please try again.");
       }
     }
   </script>
