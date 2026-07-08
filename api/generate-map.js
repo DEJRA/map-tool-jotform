@@ -41,6 +41,114 @@ export default async function handler(req, res) {
     return points;
   }
 
+  // Look up zip code for a single lat/lng using Google Geocoding API
+  async function getZipForPoint(lat, lng) {
+    try {
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${process.env.GOOGLE_MAPS_API_KEY}`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status !== "OK" || !data.results || data.results.length === 0) {
+        console.log(`No results for ${lat},${lng}: ${data.status}`);
+        return null;
+      }
+
+      // Search all address components for postal_code
+      for (const result of data.results) {
+        for (const component of result.address_components) {
+          if (component.types.includes("postal_code")) {
+            return component.long_name;
+          }
+        }
+      }
+
+      return null;
+    } catch (e) {
+      console.log("Geocoder point failed:", e.message);
+      return null;
+    }
+  }
+
+  try {
+    // Step 1: Generate map image from Google Static Maps
+    const googleUrl = `https://maps.googleapis.com/maps/api/staticmap?size=640x400&maptype=roadmap&path=${encodeURIComponent(path)}&key=${process.env.GOOGLE_MAPS_API_KEY}`;
+    const googleResponse = await fetch(googleUrl);
+    console.log("Google status:", googleResponse.status);
+    const buffer = Buffer.from(await googleResponse.arrayBuffer());
+    const base64Image = buffer.toString("base64");
+
+    // Step 2: Look up zip codes using Google Geocoding API with polygon sample points
+    const coords = geojson.geometry.coordinates[0];
+    const samplePoints = getSamplePoints(coords);
+    console.log("Sampling", samplePoints.length, "points across polygon...");
+
+    const zipResults = await Promise.all(
+      samplePoints.map(({ lat, lng }) => getZipForPoint(lat, lng))
+    );
+
+    const zipCodes = [...new Set(zipResults.filter(Boolean))].sort();
+    console.log("Zip codes found:", zipCodes.length, zipCodes);
+
+    // Step 3: Store image in GitHub
+    const timestamp = Date.now();
+    const imagePath = `map-data/images/map-${timestamp}.png`;
+    const jsonPath = `map-data/submissions/submission-${timestamp}.json`;
+
+    const githubHeaders = {
+      "Authorization": `Bearer ${process.env.GITHUB_TOKEN}`,
+      "Accept": "application/vnd.github+json",
+      "Content-Type": "application/json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    };
+
+    const repoBase = `https://api.github.com/repos/${process.env.GITHUB_REPO}/contents`;
+
+    // Upload image to GitHub
+    console.log("Uploading image to GitHub...");
+    const imageUpload = await fetch(`${repoBase}/${imagePath}`, {
+      method: "PUT",
+      headers: githubHeaders,
+      body: JSON.stringify({
+        message: `Add map image ${timestamp}`,
+        content: base64Image
+      })
+    });
+    const imageResult = await imageUpload.json();
+    console.log("GitHub image upload status:", imageUpload.status);
+
+    if (!imageResult.content || !imageResult.content.download_url) {
+      console.error("GitHub image upload failed:", JSON.stringify(imageResult));
+      res.status(500).json({ error: "Image upload failed: " + JSON.stringify(imageResult) });
+      return;
+    }
+
+    const imageUrl = imageResult.content.download_url;
+
+    // Upload submission JSON to GitHub
+    const submissionData = { timestamp, imageUrl, zipCodes, geojson };
+    const jsonUpload = await fetch(`${repoBase}/${jsonPath}`, {
+      method: "PUT",
+      headers: githubHeaders,
+      body: JSON.stringify({
+        message: `Add submission ${timestamp}`,
+        content: Buffer.from(JSON.stringify(submissionData, null, 2)).toString("base64")
+      })
+    });
+    console.log("GitHub JSON upload status:", jsonUpload.status);
+
+    res.status(200).json({ imageUrl, zipCodes, geojson });
+
+  } catch (error) {
+    console.error("FULL ERROR:", error);
+    res.status(500).json({ error: error.message });
+  }
+}        lng: (coords[i][0] + coords[i + 1][0]) / 2
+      });
+    }
+
+    return points;
+  }
+
   // Look up zip code for a single lat/lng using Census Geocoder
   async function getZipForPoint(lat, lng) {
     try {
