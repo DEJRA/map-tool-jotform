@@ -1,3 +1,50 @@
+// Sample multiple points from a polygon to cover all zip codes it spans
+function getSamplePoints(coords) {
+  const points = [];
+  const lats = coords.map(c => c[1]);
+  const lngs = coords.map(c => c[0]);
+  const centerLat = lats.reduce((a, b) => a + b) / lats.length;
+  const centerLng = lngs.reduce((a, b) => a + b) / lngs.length;
+
+  // Centroid
+  points.push({ lat: centerLat, lng: centerLng });
+
+  // Midpoint between centroid and each vertex
+  for (let i = 0; i < coords.length - 1; i++) {
+    points.push({
+      lat: (coords[i][1] + centerLat) / 2,
+      lng: (coords[i][0] + centerLng) / 2
+    });
+  }
+
+  // Midpoint of each edge
+  for (let i = 0; i < coords.length - 1; i++) {
+    points.push({
+      lat: (coords[i][1] + coords[i + 1][1]) / 2,
+      lng: (coords[i][0] + coords[i + 1][0]) / 2
+    });
+  }
+
+  return points;
+}
+
+// Look up zip code for a single lat/lng using Census Geocoder
+async function getZipForPoint(lat, lng) {
+  try {
+    const url = `https://geocoding.geo.census.gov/geocoder/geographies/coordinates?x=${lng}&y=${lat}&benchmark=Public_AR_Current&vintage=Current_Current&layers=86&format=json`;
+    const response = await fetch(url);
+    const data = await response.json();
+    const zctas = data?.result?.geographies?.["ZIP Code Tabulation Areas"];
+    if (zctas && zctas.length > 0) {
+      return zctas[0].ZCTA5CE20 || zctas[0].ZCTA5CE10 || zctas[0].GEOID;
+    }
+    return null;
+  } catch (e) {
+    console.log("Geocoder point failed:", e.message);
+    return null;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed" });
@@ -19,54 +66,16 @@ export default async function handler(req, res) {
     const buffer = Buffer.from(await googleResponse.arrayBuffer());
     const base64Image = buffer.toString("base64");
 
-    // Step 2: Look up zip codes using Census TIGERweb via POST
+    // Step 2: Look up zip codes using Census Geocoder with polygon sample points
     const coords = geojson.geometry.coordinates[0];
-    const esriRings = [coords.map(c => [c[0], c[1]])];
-    const esriGeometry = JSON.stringify({
-      rings: esriRings,
-      spatialReference: { wkid: 4326 }
-    });
+    const samplePoints = getSamplePoints(coords);
+    console.log("Sampling", samplePoints.length, "points across polygon...");
 
-    console.log("Querying TIGERweb via POST...");
-    console.log("Polygon point count:", coords.length);
-
-    // Use POST instead of GET to avoid URL length limits with complex polygons
-    const tigerResponse = await fetch(
-      "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/PUMA_TAD_TAZ_UGA_ZCTA/MapServer/2/query",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          geometry: esriGeometry,
-          geometryType: "esriGeometryPolygon",
-          inSR: "4326",
-          spatialRel: "esriSpatialRelIntersects",
-          outFields: "*",
-          returnGeometry: "false",
-          f: "json"
-        })
-      }
+    const zipResults = await Promise.all(
+      samplePoints.map(({ lat, lng }) => getZipForPoint(lat, lng))
     );
 
-    const tigerData = await tigerResponse.json();
-    console.log("TIGERweb status:", tigerResponse.status);
-    console.log("TIGERweb error:", JSON.stringify(tigerData.error));
-    console.log("TIGERweb feature count:", tigerData.features?.length);
-
-    if (tigerData.fields) {
-      console.log("Available fields:", tigerData.fields.map(f => f.name).join(", "));
-    }
-    if (tigerData.features?.length > 0) {
-      console.log("First feature attributes:", JSON.stringify(tigerData.features[0].attributes));
-    }
-
-    let zipCodes = [];
-    if (tigerData.features && tigerData.features.length > 0) {
-      zipCodes = tigerData.features.map(f => {
-        const a = f.attributes;
-        return a.ZCTA5CE20 || a.ZCTA5CE10 || a.ZCTA5 || a.GEOID20 || a.GEOID10 || a.GEOID || a.ZIP;
-      }).filter(Boolean).sort();
-    }
+    const zipCodes = [...new Set(zipResults.filter(Boolean))].sort();
     console.log("Zip codes found:", zipCodes.length, zipCodes);
 
     // Step 3: Store image in GitHub
