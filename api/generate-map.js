@@ -11,7 +11,6 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Sample multiple points from a polygon to cover all zip codes it spans
   function getSamplePoints(coords) {
     const points = [];
     const lats = coords.map(c => c[1]);
@@ -19,10 +18,8 @@ export default async function handler(req, res) {
     const centerLat = lats.reduce((a, b) => a + b) / lats.length;
     const centerLng = lngs.reduce((a, b) => a + b) / lngs.length;
 
-    // Centroid
     points.push({ lat: centerLat, lng: centerLng });
 
-    // Midpoint between centroid and each vertex
     for (let i = 0; i < coords.length - 1; i++) {
       points.push({
         lat: (coords[i][1] + centerLat) / 2,
@@ -30,7 +27,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Midpoint of each edge
     for (let i = 0; i < coords.length - 1; i++) {
       points.push({
         lat: (coords[i][1] + coords[i + 1][1]) / 2,
@@ -41,10 +37,9 @@ export default async function handler(req, res) {
     return points;
   }
 
-  // Look up zip code for a single lat/lng using Google Geocoding API
   async function getZipForPoint(lat, lng) {
     try {
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${process.env.GOOGLE_MAPS_API_KEY}`;
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${process.env.GOOGLE_SERVER_API_KEY}`;
       const response = await fetch(url);
       const data = await response.json();
 
@@ -53,7 +48,6 @@ export default async function handler(req, res) {
         return null;
       }
 
-      // Search all address components for postal_code
       for (const result of data.results) {
         for (const component of result.address_components) {
           if (component.types.includes("postal_code")) {
@@ -70,14 +64,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Step 1: Generate map image from Google Static Maps
-    const googleUrl = `https://maps.googleapis.com/maps/api/staticmap?size=640x400&maptype=roadmap&path=${encodeURIComponent(path)}&key=${process.env.GOOGLE_MAPS_API_KEY}`;
+    const googleUrl = `https://maps.googleapis.com/maps/api/staticmap?size=640x400&maptype=roadmap&path=${encodeURIComponent(path)}&key=${process.env.GOOGLE_SERVER_API_KEY}`;
     const googleResponse = await fetch(googleUrl);
     console.log("Google status:", googleResponse.status);
     const buffer = Buffer.from(await googleResponse.arrayBuffer());
     const base64Image = buffer.toString("base64");
 
-    // Step 2: Look up zip codes using Google Geocoding API with polygon sample points
     const coords = geojson.geometry.coordinates[0];
     const samplePoints = getSamplePoints(coords);
     console.log("Sampling", samplePoints.length, "points across polygon...");
@@ -89,7 +81,6 @@ export default async function handler(req, res) {
     const zipCodes = [...new Set(zipResults.filter(Boolean))].sort();
     console.log("Zip codes found:", zipCodes.length, zipCodes);
 
-    // Step 3: Store image in GitHub
     const timestamp = Date.now();
     const imagePath = `map-data/images/map-${timestamp}.png`;
     const jsonPath = `map-data/submissions/submission-${timestamp}.json`;
@@ -103,7 +94,6 @@ export default async function handler(req, res) {
 
     const repoBase = `https://api.github.com/repos/${process.env.GITHUB_REPO}/contents`;
 
-    // Upload image to GitHub
     console.log("Uploading image to GitHub...");
     const imageUpload = await fetch(`${repoBase}/${imagePath}`, {
       method: "PUT",
@@ -124,7 +114,6 @@ export default async function handler(req, res) {
 
     const imageUrl = imageResult.content.download_url;
 
-    // Upload submission JSON to GitHub
     const submissionData = { timestamp, imageUrl, zipCodes, geojson };
     const jsonUpload = await fetch(`${repoBase}/${jsonPath}`, {
       method: "PUT",
