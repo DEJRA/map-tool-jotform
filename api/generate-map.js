@@ -19,30 +19,47 @@ export default async function handler(req, res) {
     const buffer = Buffer.from(await googleResponse.arrayBuffer());
     const base64Image = buffer.toString("base64");
 
-    // Step 2: Look up zip codes using Census TIGERweb
+    // Step 2: Look up zip codes using Census TIGERweb via POST
     const coords = geojson.geometry.coordinates[0];
     const esriRings = [coords.map(c => [c[0], c[1]])];
-    const esriGeometry = JSON.stringify({ rings: esriRings, spatialReference: { wkid: 4326 } });
+    const esriGeometry = JSON.stringify({
+      rings: esriRings,
+      spatialReference: { wkid: 4326 }
+    });
 
-    // inSR=4326 tells TIGERweb our coordinates are standard lat/lng (WGS84)
-    const tigerUrl = `https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/PUMA_TAD_TAZ_UGA_ZCTA/MapServer/2/query?geometry=${encodeURIComponent(esriGeometry)}&geometryType=esriGeometryPolygon&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=false&f=json`;
+    console.log("Querying TIGERweb via POST...");
+    console.log("Polygon point count:", coords.length);
 
-    console.log("Querying TIGERweb...");
-    const tigerResponse = await fetch(tigerUrl);
+    // Use POST instead of GET to avoid URL length limits with complex polygons
+    const tigerResponse = await fetch(
+      "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/PUMA_TAD_TAZ_UGA_ZCTA/MapServer/2/query",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          geometry: esriGeometry,
+          geometryType: "esriGeometryPolygon",
+          inSR: "4326",
+          spatialRel: "esriSpatialRelIntersects",
+          outFields: "*",
+          returnGeometry: "false",
+          f: "json"
+        })
+      }
+    );
+
     const tigerData = await tigerResponse.json();
-
-    // Log the full response so we can see field names and values
     console.log("TIGERweb status:", tigerResponse.status);
     console.log("TIGERweb error:", JSON.stringify(tigerData.error));
     console.log("TIGERweb feature count:", tigerData.features?.length);
-    if (tigerData.features?.length > 0) {
-      console.log("First feature attributes:", JSON.stringify(tigerData.features[0].attributes));
-    }
+
     if (tigerData.fields) {
       console.log("Available fields:", tigerData.fields.map(f => f.name).join(", "));
     }
+    if (tigerData.features?.length > 0) {
+      console.log("First feature attributes:", JSON.stringify(tigerData.features[0].attributes));
+    }
 
-    // Try every possible ZCTA field name Census has used across versions
     let zipCodes = [];
     if (tigerData.features && tigerData.features.length > 0) {
       zipCodes = tigerData.features.map(f => {
