@@ -16,7 +16,6 @@
     h2 { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
     p { font-size: 12px; color: #555; margin-bottom: 6px; }
 
-    /* Map and result image share the same fixed-height container */
     #mapContainer {
       position: relative;
       height: 340px;
@@ -41,6 +40,20 @@
       border: 1px solid #ddd;
       display: none;
     }
+    #loadingOverlay {
+      position: absolute;
+      top: 0; left: 0;
+      height: 100%;
+      width: 100%;
+      background: rgba(255,255,255,0.75);
+      border-radius: 6px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      color: #555;
+      font-style: italic;
+    }
 
     .controls { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
     input[type="text"] {
@@ -61,31 +74,16 @@
       white-space: nowrap;
       transition: background-color 0.15s ease;
     }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-primary { background-color: #2563eb; color: white; }
-    .btn-primary:hover { background-color: #1d4ed8; }
+    .btn-primary:hover:not(:disabled) { background-color: #1d4ed8; }
     .btn-secondary { background-color: #f1f1f1; color: #333; }
-    .btn-secondary:hover { background-color: #e2e2e2; }
+    .btn-secondary:hover:not(:disabled) { background-color: #e2e2e2; }
     .btn-success { background-color: #16a34a; color: white; }
-    .btn-success:hover { background-color: #15803d; }
+    .btn-success:hover:not(:disabled) { background-color: #15803d; }
 
     #stepLabel { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
     #stepHint { font-size: 12px; color: #555; margin-bottom: 6px; }
-
-    /* Loading overlay on top of the map while generating */
-    #loadingOverlay {
-      position: absolute;
-      top: 0; left: 0;
-      height: 100%;
-      width: 100%;
-      background: rgba(255,255,255,0.75);
-      border-radius: 6px;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      font-size: 13px;
-      color: #555;
-      font-style: italic;
-    }
   </style>
 </head>
 <body>
@@ -101,19 +99,19 @@
   <div id="mapContainer">
     <div id="map"></div>
     <img id="resultImage" src="" alt="Generated map">
-    <div id="loadingOverlay">Generating image, please wait...</div>
+    <div id="loadingOverlay">Submitting, please wait...</div>
   </div>
 
   <div class="controls" id="actionControls">
-    <button class="btn-secondary" id="clearBtn" onclick="clearPolygon()">Clear Shape</button>
-    <button class="btn-success" id="generateBtn" onclick="generateImage()">Generate Image</button>
-    <input id="urlBox" type="text" style="display:none;">
-    <button class="btn-primary" id="copyBtn" style="display:none;" onclick="copyUrl()">Copy Link</button>
+    <button class="btn-secondary" onclick="clearPolygon()">Clear Shape</button>
+    <button class="btn-success"   id="generateBtn" onclick="generatePreview()">Generate Image</button>
+    <button class="btn-primary"   id="submitBtn"   onclick="submitAndCopy()" style="display:none;">Submit &amp; Copy Link</button>
   </div>
 
   <script>
+    const CLIENT_KEY = "AIzaSyAcyAvzOdRiSogOehJRXOkYEyisWhHoaIQ";
     let map, geocoder, currentPolygon, polygonPoints = [];
-    let imageGenerated = false;
+    let previewGenerated = false;
 
     function initMap() {
       geocoder = new google.maps.Geocoder();
@@ -122,7 +120,7 @@
         zoom: 4,
       });
       map.addListener("click", (event) => {
-        if (imageGenerated) return;
+        if (previewGenerated) return;
         polygonPoints.push(event.latLng);
         drawPolygon();
       });
@@ -141,26 +139,21 @@
     }
 
     function clearPolygon() {
-      // Always reset everything back to a clean starting state
       if (currentPolygon) currentPolygon.setMap(null);
       polygonPoints = [];
       currentPolygon = null;
-      imageGenerated = false;
+      previewGenerated = false;
 
-      // Hide result image, show map
       document.getElementById("resultImage").style.display = "none";
+      document.getElementById("resultImage").src = "";
       document.getElementById("map").style.display = "block";
 
-      // Reset buttons
       document.getElementById("generateBtn").style.display = "inline-block";
-      document.getElementById("copyBtn").style.display = "none";
-      document.getElementById("urlBox").value = "";
+      document.getElementById("submitBtn").style.display = "none";
 
-      // Reset labels
       document.getElementById("stepLabel").textContent = "Step 2: Click points on the map to draw your area";
       document.getElementById("stepHint").textContent = 'Click multiple points to outline the shape. Click "Clear Shape" to start over.';
 
-      // Reset address input and map view
       document.getElementById("addressInput").value = "";
       map.setCenter({ lat: 39.8283, lng: -98.5795 });
       map.setZoom(4);
@@ -196,22 +189,35 @@
       return pathStr;
     }
 
-    function copyUrl() {
-      navigator.clipboard.writeText(document.getElementById("urlBox").value)
-        .then(() => alert("Image link copied!"))
-        .catch(() => alert("Couldn't copy automatically. Please try again."));
-    }
-
-    async function generateImage() {
+    // Step 2 → Step 3: build a preview image instantly on the frontend,
+    // no backend call, nothing stored yet
+    function generatePreview() {
       if (polygonPoints.length < 3) {
         alert("Please draw a shape with at least 3 points first.");
         return;
       }
 
-      // Show loading overlay over the map while generating
+      const path = buildPathStr();
+      const previewUrl = `https://maps.googleapis.com/maps/api/staticmap?size=640x400&maptype=roadmap&path=${encodeURIComponent(path)}&key=${CLIENT_KEY}`;
+
+      const img = document.getElementById("resultImage");
+      img.src = previewUrl;
+      img.style.display = "block";
+      document.getElementById("map").style.display = "none";
+      previewGenerated = true;
+
+      document.getElementById("generateBtn").style.display = "none";
+      document.getElementById("submitBtn").style.display = "inline-block";
+
+      document.getElementById("stepLabel").textContent = "Step 3: Review and submit your area";
+      document.getElementById("stepHint").textContent = 'Happy with your selection? Click "Submit & Copy Link" to save it and copy the link. Click "Clear Shape" to start over.';
+    }
+
+    // Step 3 → Done: push to GitHub, do zip lookup, copy permanent URL
+    async function submitAndCopy() {
       const overlay = document.getElementById("loadingOverlay");
       overlay.style.display = "flex";
-      document.getElementById("generateBtn").disabled = true;
+      document.getElementById("submitBtn").disabled = true;
 
       try {
         const response = await fetch("/api/generate-map", {
@@ -225,33 +231,27 @@
 
         const result = await response.json();
         overlay.style.display = "none";
-        document.getElementById("generateBtn").disabled = false;
+        document.getElementById("submitBtn").disabled = false;
 
         if (result.error) {
           alert("Something went wrong. Please try again.");
           return;
         }
 
-        // Replace map with generated image in the same container
-        const img = document.getElementById("resultImage");
-        img.src = result.imageUrl;
-        img.style.display = "block";
-        document.getElementById("map").style.display = "none";
-        imageGenerated = true;
+        // Swap preview image for the permanent GitHub-hosted image
+        document.getElementById("resultImage").src = result.imageUrl;
 
-        // Swap Generate button for Copy Link button
-        document.getElementById("generateBtn").style.display = "none";
-        const urlBox = document.getElementById("urlBox");
-        urlBox.value = result.imageUrl;
-        document.getElementById("copyBtn").style.display = "inline-block";
+        // Copy the permanent URL to clipboard
+        await navigator.clipboard.writeText(result.imageUrl);
 
-        // Update step label
-        document.getElementById("stepLabel").textContent = "Step 3: Copy your image link";
-        document.getElementById("stepHint").textContent = 'Paste it into the "Map Image Link" field on the form below. Click "Clear Shape" to start over.';
+        document.getElementById("stepLabel").textContent = "Done!";
+        document.getElementById("stepHint").textContent = 'Your link has been copied. Paste it into the "Map Image Link" field on the form below. Click "Clear Shape" to start over.';
+        document.getElementById("submitBtn").textContent = "✓ Copied";
+        document.getElementById("submitBtn").disabled = true;
 
       } catch (error) {
         overlay.style.display = "none";
-        document.getElementById("generateBtn").disabled = false;
+        document.getElementById("submitBtn").disabled = false;
         alert("Something went wrong. Please try again.");
       }
     }
