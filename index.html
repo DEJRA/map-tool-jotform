@@ -213,12 +213,17 @@
       document.getElementById("stepHint").textContent = 'Happy with your selection? Click "Submit & Copy Link" to save it and copy the link. Click "Clear Shape" to start over.';
     }
 
-    // Step 3 → Done: push to GitHub, do zip lookup, copy permanent URL
+    // Step 3 → Done: two clearly separated phases
     async function submitAndCopy() {
+      const btn = document.getElementById("submitBtn");
       const overlay = document.getElementById("loadingOverlay");
-      overlay.style.display = "flex";
-      document.getElementById("submitBtn").disabled = true;
 
+      // ── Phase 1: Submit to GitHub ──────────────────────────────────────────
+      btn.disabled = true;
+      btn.textContent = "Submitting...";
+      overlay.style.display = "flex";
+
+      let imageUrl;
       try {
         const response = await fetch("/api/generate-map", {
           method: "POST",
@@ -230,34 +235,39 @@
         });
 
         const result = await response.json();
-        overlay.style.display = "none";
-        document.getElementById("submitBtn").disabled = false;
 
         if (result.error) {
-          alert("Something went wrong. Please try again.");
-          return;
+          throw new Error(result.error);
         }
 
-        // Swap preview image for the permanent GitHub-hosted image
-        document.getElementById("resultImage").src = result.imageUrl;
+        imageUrl = result.imageUrl;
 
-        document.getElementById("stepLabel").textContent = "Done!";
-        document.getElementById("submitBtn").disabled = true;
-
-        // Try clipboard — falls back to a visible URL if blocked inside an iframe
-        try {
-          await navigator.clipboard.writeText(result.imageUrl);
-          document.getElementById("submitBtn").textContent = "✓ Link Copied";
-          document.getElementById("stepHint").textContent = 'Your link has been copied. Paste it into the "Map Image Link" field on the form below. Click "Clear Shape" to start over.';
-        } catch (clipboardError) {
-          document.getElementById("submitBtn").style.display = "none";
-          document.getElementById("stepHint").innerHTML = 'Submission saved. Copy your link below and paste it into the "Map Image Link" field on the form.<br><br><input type="text" id="finalUrl" value="' + result.imageUrl + '" readonly style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:12px;margin-top:4px;" onclick="this.select();">';
-        }
+        // Swap preview for the permanent GitHub-hosted image
+        document.getElementById("resultImage").src = imageUrl;
 
       } catch (error) {
         overlay.style.display = "none";
-        document.getElementById("submitBtn").disabled = false;
+        btn.disabled = false;
+        btn.textContent = "Submit & Copy Link";
         alert("Submission failed. Please try again.");
+        return;
+      }
+
+      // Submission complete — hide overlay before clipboard step
+      overlay.style.display = "none";
+      document.getElementById("stepLabel").textContent = "Done!";
+
+      // ── Phase 2: Copy link to clipboard ────────────────────────────────────
+      btn.textContent = "Copying Link...";
+
+      try {
+        await navigator.clipboard.writeText(imageUrl);
+        btn.textContent = "✓ Link Copied";
+        document.getElementById("stepHint").textContent = 'Your link has been copied. Paste it into the "Map Image Link" field on the form below. Click "Clear Shape" to start over.';
+      } catch (clipboardError) {
+        // Clipboard blocked (e.g. inside a cross-origin iframe)
+        btn.style.display = "none";
+        document.getElementById("stepHint").innerHTML = 'Submission saved. Copy your link below and paste it into the "Map Image Link" field on the form.<br><br><input type="text" value="' + imageUrl + '" readonly style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:12px;margin-top:4px;" onclick="this.select();">';
       }
     }
   </script>
