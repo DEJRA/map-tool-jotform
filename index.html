@@ -132,8 +132,10 @@
 
     function buildPathStr() {
       let pathStr = "color:0xff0000ff|fillcolor:0xff000066";
-      polygonPoints.forEach(p => { pathStr += `|${p.lat()},${p.lng()}`; });
-      pathStr += `|${polygonPoints[0].lat()},${polygonPoints[0].lng()}`;
+      polygonPoints.forEach(p => {
+        pathStr += `|${p.lat().toFixed(4)},${p.lng().toFixed(4)}`;
+      });
+      pathStr += `|${polygonPoints[0].lat().toFixed(4)},${polygonPoints[0].lng().toFixed(4)}`;
       return pathStr;
     }
 
@@ -168,8 +170,6 @@
           return;
         }
 
-        // The image URL contains the filename which serves as the attribution link
-        // to the matching JSON record in GitHub — no extra field needed
         document.getElementById("imageContainer").innerHTML = `
           <h3>Step 3: Copy your image link</h3>
           <img id="resultImage" src="${result.imageUrl}">
