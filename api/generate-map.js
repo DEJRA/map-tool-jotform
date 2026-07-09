@@ -26,7 +26,7 @@ export default async function handler(req, res) {
 
   // Build a uniform grid of points inside the polygon
   // gridSpacing of 0.04 degrees ≈ 2.5 miles — fine enough to catch small urban zip codes
-  function getGridPoints(coords, gridSpacing = 0.02) {
+  function getGridPoints(coords, gridSpacing = 0.01) {
     const lngs = coords.map(c => c[0]);
     const lats = coords.map(c => c[1]);
     const minLng = Math.min(...lngs);
